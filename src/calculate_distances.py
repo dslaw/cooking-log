@@ -3,9 +3,6 @@ from time import time
 
 import pandas as pd
 
-from src.clean import FILTER_LINES, clean, tokenize
-from src.parse import parse_cooking_log, read_cooking_log
-
 PROGRESS_INTERVAL = 1_000_000
 CHECKPOINT_INTERVAL = 4_000_000
 
@@ -26,55 +23,12 @@ def similarity(tokens_a: list[str], tokens_b: list[str]) -> float:
     return n_overlap / n_total if n_total else 0.0
 
 
-print("--- Reading cooking log ---")
+print("--- Reading data ---")
 data_dir = Path("data")
-input_file = data_dir / "cooking-log.md"
-cooking_log = read_cooking_log(input_file)
-entries = parse_cooking_log(cooking_log)
+df_entries = pd.read_parquet(data_dir / "entries.parquet")
+df_dishes = pd.read_parquet(data_dir / "dishes.parquet")
 
-print(f"--- Read {len(entries):,} entries ---")
-
-# Create a table with a row for each log entry.
-print("--- Creating entries table ---")
-df_entries = pd.DataFrame.from_records(
-    [
-        {
-            "date": entry.date,
-            "meal": str(entry.meal),
-            "notes": entry.notes,
-        }
-        for entry in entries
-    ]
-)
-df_entries["date"] = pd.to_datetime(df_entries.date)
-df_entries["id"] = range(1, len(df_entries) + 1)
-
-# Create a table with a row for each log entry dish.
-print("--- Creating dishes table ---")
-dish_id = 1
-dish_records = []
-for entry_id, entry in df_entries.iterrows():
-    dishes = entries[entry_id].dishes
-    for dish in dishes:
-        cleaned = clean(dish)
-
-        if cleaned in FILTER_LINES:
-            continue
-
-        tokens = tokenize(cleaned)
-
-        dish_records.append(
-            {
-                "dish_id": dish_id,
-                "entry_id": entry_id,
-                "raw_text": dish,
-                "cleaned_text": cleaned,
-                "tokens": tokens,
-            }
-        )
-        dish_id += 1
-
-df_dishes = pd.DataFrame.from_records(dish_records)
+print(f"--- Read {len(df_entries):,} entries, {len(df_dishes):,} dishes ---")
 
 
 # Create a table with pairwise distances between dishes.
