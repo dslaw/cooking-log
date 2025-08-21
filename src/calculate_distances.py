@@ -26,9 +26,16 @@ def similarity(tokens_a: list[str], tokens_b: list[str]) -> float:
 print("--- Reading data ---")
 data_dir = Path("data")
 df_entries = pd.read_parquet(data_dir / "entries.parquet")
-df_dishes = pd.read_parquet(data_dir / "dishes.parquet")
+df_dishes = pd.read_parquet(data_dir / "dishes_deduped.parquet")
+n_dishes = len(df_dishes)
 
-print(f"--- Read {len(df_entries):,} entries, {len(df_dishes):,} dishes ---")
+print(f"--- Read {len(df_entries):,} entries, {n_dishes:,} dishes ---")
+
+
+# Deduplicate.
+df_dishes = df_dishes[df_dishes["dish_id"] == df_dishes["canonical_dish_id"]]
+
+print(f"--- Deduplicated to {len(df_dishes):,} from {n_dishes:,} dishes ---")
 
 
 # Create a table with pairwise distances between dishes.
