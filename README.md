@@ -50,6 +50,7 @@ Finally, run the Python scripts:
 # Remove any data artifacts that are present.
 $ rm data/*.parquet
 $ uv run python -m src.parse_entries
+$ uv run python -m src.dedupe
 $ uv run python -m src.calculate_distances
 $ uv run python -m src.find_cliques
 $ uv run python -m src.format_cliques
