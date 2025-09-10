@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.clean import FILTER_LINES, clean, tokenize
+from src.clean import FILTER_LINES, LANGUAGES, clean, detect_language, prepare, tokenize
 from src.parse import parse_cooking_log, read_cooking_log
 
 print("--- Reading cooking log ---")
@@ -36,18 +36,30 @@ dish_records = []
 for entry_id, entry in df_entries.iterrows():
     dishes = entries[entry_id].dishes
     for dish in dishes:
-        cleaned = clean(dish)
+        prepared = prepare(dish)
+
+        language_cv = detect_language(prepared)
+        language = language_cv.language
+        language_confidence = language_cv.value
+        language_serializable = LANGUAGES[language]["value"]
+
+        cleaned = clean(prepared)
 
         if cleaned in FILTER_LINES:
             continue
 
-        tokens = tokenize(cleaned)
+        tokens = tokenize(cleaned, language)
+
+        if not tokens:
+            continue
 
         dish_records.append(
             {
                 "dish_id": dish_id,
                 "entry_id": entry_id,
                 "raw_text": dish,
+                "language": language_serializable,
+                "language_confidence": language_confidence,
                 "cleaned_text": cleaned,
                 "tokens": tokens,
             }

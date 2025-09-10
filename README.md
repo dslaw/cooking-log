@@ -33,9 +33,12 @@ was cooked. An entry may also have an optional "Notes" section.
 
 # Getting Started
 
-To get started, first create a virtual environment using `uv`:
+To get started, first create a virtual environment using `uv` and install
+dependencies:
 ```bash
 $ uv sync
+$ uv run python -c "import nltk; nltk.download('stopwords')"
+$ uv run python -c "import nltk; nltk.download('universal_tagset')"
 ```
 
 Then, set up a directory for data artifacts and place the cooking log file in
