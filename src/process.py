@@ -2,7 +2,7 @@ import re
 import string
 
 import nltk
-from lingua import ConfidenceValue, Language, LanguageDetectorBuilder
+from lingua import Language, LanguageDetectorBuilder
 from nltk.corpus import stopwords
 
 LANGUAGE_ENGLISH = "english"
@@ -58,10 +58,18 @@ class TextProcessor:
 
         return text
 
-    def detect_language(self, text: str) -> ConfidenceValue:
+    def detect_language(self, text: str) -> tuple[Language, float]:
+        # HACK: The language detector is sensitive to loanwords, which for this
+        #       data generally appear in English text (e.g. "zucchini and red
+        #       onion"). Use a simple heuristic to flag English text using a
+        #       stopword that does not appear in the other supported languages.
+        match = re.search(r"\band\b", text, flags=re.IGNORECASE)
+        if match is not None:
+            return Language.ENGLISH, 1.0
+
         # Detected language with highest confidence.
         cv, *_ = self.language_detector.compute_language_confidence_values(text)
-        return cv
+        return cv.language, cv.value
 
     @staticmethod
     def clean(text: str) -> str:
@@ -74,13 +82,11 @@ class TextProcessor:
     def tokenize(text: str) -> list[str]:
         return text.split()
 
-    def clean_tokens(
-        self, tokens: list[str], language_cv: ConfidenceValue
-    ) -> list[str]:
-        if language_cv.language not in self.languages:
-            raise ValueError(f"Unsupported language: {language_cv.language}")
+    def clean_tokens(self, tokens: list[str], language: Language) -> list[str]:
+        if language not in self.languages:
+            raise ValueError(f"Unsupported language: {language}")
 
-        language = self.languages[language_cv.language]
+        language = self.languages[language]
 
         # Remove ingredient modifiers, e.g. "red pepper" or "baked" in "baked
         # tofu", as downstream deduplication/distance calculations/etc use
@@ -103,8 +109,8 @@ class TextProcessor:
         # preprocessing is done first to amend specific idiosyncracies in the
         # data.
         preprocessed = self.preprocess(text, self.preprocess_substitutions)
-        language_cv = self.detect_language(preprocessed)
-        language = self.languages[language_cv.language]["value"]  # Serializable.
+        detected_lang, detected_lang_confidence = self.detect_language(preprocessed)
+        language = self.languages[detected_lang]["value"]  # Serializable.
 
         cleaned = self.clean(preprocessed)
 
@@ -113,8 +119,8 @@ class TextProcessor:
         if not tokens or tokens in self.skip:
             return None
 
-        cleaned_tokens = self.clean_tokens(tokens, language_cv)
-        return cleaned, cleaned_tokens, language, language_cv.value
+        cleaned_tokens = self.clean_tokens(tokens, detected_lang)
+        return cleaned, cleaned_tokens, language, detected_lang_confidence
 
 
 def make_text_processor() -> TextProcessor:
