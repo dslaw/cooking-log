@@ -2,6 +2,7 @@ import re
 import string
 
 import nltk
+from fast_langdetect import LangDetectConfig, LangDetector
 from lingua import Language, LanguageDetectorBuilder
 from nltk.corpus import stopwords
 
@@ -15,23 +16,66 @@ STOPWORDS_SPANISH = set(stopwords.words("spanish"))
 
 ALLOWED_CHARS = set(string.ascii_letters + string.whitespace)
 
+LINGUA_LANGUAGES = {
+    Language.ENGLISH: LANGUAGE_ENGLISH,
+    Language.SPANISH: LANGUAGE_SPANISH,
+    Language.ITALIAN: LANGUAGE_ITALIAN,
+}
+LANGUAGE_CODES = {
+    "en": LANGUAGE_ENGLISH,
+    "es": LANGUAGE_SPANISH,
+    "it": LANGUAGE_ITALIAN,
+}
 LANGUAGES = {
-    Language.ENGLISH: {
+    LANGUAGE_ENGLISH: {
         "stopwords": STOPWORDS_ENGLISH,
         "value": LANGUAGE_ENGLISH,
         # Only English is supported for POS tagging.
         "pos_tagger": lambda tokens: nltk.pos_tag(tokens, tagset="universal"),
         "pos_modifiers": {"VERB", "ADJ"},
     },
-    Language.ITALIAN: {
+    LANGUAGE_ITALIAN: {
         "stopwords": STOPWORDS_ITALIAN,
         "value": LANGUAGE_ITALIAN,
     },
-    Language.SPANISH: {
+    LANGUAGE_SPANISH: {
         "stopwords": STOPWORDS_SPANISH,
         "value": LANGUAGE_SPANISH,
     },
 }
+
+
+class LanguageDetector:
+    def __init__(
+        self,
+        language_codes: dict[str, str],
+        languages: dict[Language, str],
+    ):
+        self.language_codes = language_codes
+        self.languages = languages
+
+        config = LangDetectConfig(model="lite")
+        self._detector_primary = LangDetector(config)
+        self._detector_secondary = LanguageDetectorBuilder.from_languages(
+            *languages.keys()
+        ).build()
+
+    def detect_language(self, text: str) -> tuple[str, float]:
+        detected_language, *_ = self._detector_primary.detect(text, k=1)
+        language_code = detected_language["lang"]
+
+        if language_code in self.language_codes:
+            return self.language_codes[language_code], detected_language["score"]
+
+        # Fallback to lingua, which is less accurate but has a constrained
+        # prediction space such that only a supported language will be returned.
+        # This helps for cases where the input text is close to a supported
+        # language but varies enough that it is closer to an unsupported
+        # language, for example Catalan instead of Castilian Spanish, or
+        # Corsican when an Italian text contains a loanword from a dialect or
+        # other Italian language (e.g. Sicilian).
+        detected, *_ = self._detector_secondary.compute_language_confidence_values(text)
+        return self.languages[detected.language], detected.value
 
 
 class TextProcessor:
@@ -39,14 +83,13 @@ class TextProcessor:
         self,
         preprocess_substitutions: list[tuple[str, str]],
         skip: list[list[str]],
+        language_detector: LanguageDetector,
         languages: dict,
     ):
         self.preprocess_substitutions = preprocess_substitutions
         self.skip = skip
+        self.language_detector = language_detector
         self.languages = languages
-        self.language_detector = LanguageDetectorBuilder.from_languages(
-            *languages
-        ).build()
 
     @staticmethod
     def preprocess(text: str, substitutions: list[tuple[str, str]]) -> str:
@@ -58,18 +101,8 @@ class TextProcessor:
 
         return text
 
-    def detect_language(self, text: str) -> tuple[Language, float]:
-        # HACK: The language detector is sensitive to loanwords, which for this
-        #       data generally appear in English text (e.g. "zucchini and red
-        #       onion"). Use a simple heuristic to flag English text using a
-        #       stopword that does not appear in the other supported languages.
-        match = re.search(r"\band\b", text, flags=re.IGNORECASE)
-        if match is not None:
-            return Language.ENGLISH, 1.0
-
-        # Detected language with highest confidence.
-        cv, *_ = self.language_detector.compute_language_confidence_values(text)
-        return cv.language, cv.value
+    def detect_language(self, text: str) -> tuple[str, float]:
+        return self.language_detector.detect_language(text)
 
     @staticmethod
     def clean(text: str) -> str:
@@ -82,11 +115,8 @@ class TextProcessor:
     def tokenize(text: str) -> list[str]:
         return text.split()
 
-    def clean_tokens(self, tokens: list[str], language: Language) -> list[str]:
-        if language not in self.languages:
-            raise ValueError(f"Unsupported language: {language}")
-
-        language = self.languages[language]
+    def clean_tokens(self, tokens: list[str], language_name: str) -> list[str]:
+        language = self.languages[language_name]
 
         # Remove ingredient modifiers, e.g. "red pepper" or "baked" in "baked
         # tofu", as downstream deduplication/distance calculations/etc use
@@ -110,22 +140,25 @@ class TextProcessor:
         # data.
         preprocessed = self.preprocess(text, self.preprocess_substitutions)
         detected_lang, detected_lang_confidence = self.detect_language(preprocessed)
-        language = self.languages[detected_lang]["value"]  # Serializable.
 
         cleaned = self.clean(preprocessed)
 
         tokens = self.tokenize(cleaned)
-
         if not tokens or tokens in self.skip:
             return None
 
         cleaned_tokens = self.clean_tokens(tokens, detected_lang)
-        return cleaned, cleaned_tokens, language, detected_lang_confidence
+        if not cleaned_tokens:
+            return None
+
+        return cleaned, cleaned_tokens, detected_lang, detected_lang_confidence
 
 
 def make_text_processor() -> TextProcessor:
+    language_detector = LanguageDetector(LANGUAGE_CODES, LINGUA_LANGUAGES)
     return TextProcessor(
         preprocess_substitutions=[(r"za'atar", "zaatar"), (r"leftover\s+", "")],
         skip=[["ate", "out"], ["nothing"]],
+        language_detector=language_detector,
         languages=LANGUAGES,
     )
