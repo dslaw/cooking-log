@@ -9,20 +9,23 @@ Run with:
     streamlit run streamlit_app.py
 
 """
+
+import altair as alt
 import pandas as pd
 import streamlit as st
-import altair as alt
 
 
 def load_data() -> pd.DataFrame:
     df_dishes = pd.read_parquet("dishes_deduped.parquet")
     df_entries = pd.read_parquet("entries.parquet")
 
-    df_entries = df_entries.rename(columns={
-        "date": "entry_date",
-        "id": "entry_id",
-        "meal": "meal_type",
-    })
+    df_entries = df_entries.rename(
+        columns={
+            "date": "entry_date",
+            "id": "entry_id",
+            "meal": "meal_type",
+        }
+    )
     df_entries["entry_date"] = pd.to_datetime(df_entries["entry_date"]).dt.date
 
     df_merged = df_dishes.merge(df_entries, how="inner", on="entry_id")
@@ -31,9 +34,11 @@ def load_data() -> pd.DataFrame:
 
 def with_frequencies(df: pd.DataFrame) -> pd.DataFrame:
     frequencies = df["canonical_dish_id"].value_counts()
-    return (
-        df.merge(frequencies, how="inner", on="canonical_dish_id")
-        .rename(columns={"count": "frequency"})
+    if "frequency" in df.columns:
+        df = df.drop(columns=["frequency"])
+
+    return df.merge(frequencies, how="inner", on="canonical_dish_id").rename(
+        columns={"count": "frequency"}
     )
 
 
@@ -41,7 +46,9 @@ def deduplicate(df: pd.DataFrame) -> pd.DataFrame:
     return df[df["dish_id"] == df["canonical_dish_id"]]
 
 
-def filter_df(df: pd.DataFrame, start_date, end_date, meal_type: str, raw_text_substr: str) -> pd.DataFrame:
+def filter_df(
+    df: pd.DataFrame, start_date, end_date, meal_type: str, raw_text_substr: str
+) -> pd.DataFrame:
     out = df.copy()
     if start_date is not None and end_date is not None:
         # inclusive
@@ -75,7 +82,9 @@ def main():
         start_date = None
         end_date = None
 
-    meal_type = st.sidebar.selectbox("Meal type", options=["All", "Lunch", "Dinner"], index=0)
+    meal_type = st.sidebar.selectbox(
+        "Meal type", options=["All", "Lunch", "Dinner"], index=0
+    )
 
     raw_text_substr = st.sidebar.text_input("Raw text contains (substring)")
 
@@ -93,15 +102,22 @@ def main():
 
     result_df = st.session_state["filtered_df"]
 
-    # Deduplicate and compute frequency
-    dedup = deduplicate(result_df)
-
     # Table view (sorting options removed from UI)
     st.subheader("Dishes (deduplicated)")
-    st.write("Showing deduplicated dishes with representative fields and frequency counts.")
+    st.write(
+        "Showing deduplicated dishes with representative fields and frequency counts."
+    )
 
     # Table column display order
-    cols = ["entry_date", "meal_type", "raw_text", "frequency", "dish_id", "canonical_dish_id", "cleaned_text"]
+    cols = [
+        "entry_date",
+        "meal_type",
+        "raw_text",
+        "frequency",
+        "dish_id",
+        "canonical_dish_id",
+        "cleaned_text",
+    ]
 
     # Default directions (assumptions): entry_date most-recent first (desc), frequency desc, others asc
     default_directions = {
@@ -119,17 +135,13 @@ def main():
 
     # Prepare display DataFrame depending on checkbox
     if show_duplicates:
-        # original rows view: need to compute frequency per original row
-        display_original = result_df.copy()
-        if not dedup.empty:
-            freq_map = dict(zip(dedup['canonical_dish_id'], dedup['frequency']))
-            display_original['frequency'] = display_original['canonical_dish_id'].map(freq_map).fillna(0).astype(int)
-        else:
-            display_original['frequency'] = 0
-        display_df = display_original.copy()
+        display_df = result_df
     else:
-        # deduplicated view
-        display_df = dedup.copy()
+        # Deduplicate
+        display_df = deduplicate(result_df)
+
+    # Compute frequencies
+    display_df = with_frequencies(display_df)
 
     # Apply default sorting only (no interactive sort controls)
     asc_list = [default_directions.get(col, True) for col in cols]
@@ -139,14 +151,19 @@ def main():
 
     # Entry date vs Frequency scatter plot (aggregated, deduplicated by entry_date)
     st.subheader("Entry date vs Frequency")
-    # Use the currently-selected filters so the plot updates when filters change
-    filtered_now = filter_df(df, start_date, end_date, meal_type,
-                             raw_text_substr)
 
     # Always use deduplicated records for this plot
-    dedup_now = deduplicate(filtered_now).copy() if not filtered_now.empty else pd.DataFrame()
+    dedup_now = (
+        with_frequencies(deduplicate(result_df))
+        if not result_df.empty
+        else pd.DataFrame()
+    )
 
-    if not dedup_now.empty and "entry_date" in dedup_now.columns and "frequency" in dedup_now.columns:
+    if (
+        not dedup_now.empty
+        and "entry_date" in dedup_now.columns
+        and "frequency" in dedup_now.columns
+    ):
         # Ensure datetime for Altair
         dedup_now["entry_date"] = pd.to_datetime(dedup_now["entry_date"])
 
@@ -157,11 +174,15 @@ def main():
 
         if "raw_text" in dedup_now.columns:
             agg = (
-                dedup_now.groupby("entry_date").agg({"frequency": "sum", "raw_text": sample_texts}).reset_index()
+                dedup_now.groupby("entry_date")
+                .agg({"frequency": "sum", "raw_text": sample_texts})
+                .reset_index()
                 .rename(columns={"raw_text": "raw_samples"})
             )
         else:
-            agg = dedup_now.groupby("entry_date").agg({"frequency": "sum"}).reset_index()
+            agg = (
+                dedup_now.groupby("entry_date").agg({"frequency": "sum"}).reset_index()
+            )
             agg["raw_samples"] = ""
 
         # Build tooltip: include raw_samples
@@ -188,15 +209,24 @@ def main():
 
     # Frequency plot
     st.subheader("Frequency plot")
+    dedup = deduplicate(result_df)
     if not dedup.empty:
         chart_df = dedup.copy()
-        chart_df["label"] = chart_df["cleaned_text"].fillna(chart_df["raw_text"]) if "cleaned_text" in chart_df.columns else chart_df["raw_text"]
+        chart_df["label"] = (
+            chart_df["cleaned_text"].fillna(chart_df["raw_text"])
+            if "cleaned_text" in chart_df.columns
+            else chart_df["raw_text"]
+        )
         chart = (
             alt.Chart(chart_df)
             .mark_bar()
             .encode(
                 x=alt.X("frequency:Q", title="Frequency"),
-                y=alt.Y("label:N", sort=alt.EncodingSortField(field="frequency", order="descending"), title="Dish"),
+                y=alt.Y(
+                    "label:N",
+                    sort=alt.EncodingSortField(field="frequency", order="descending"),
+                    title="Dish",
+                ),
                 tooltip=["label", "frequency"],
             )
             .properties(height=300)
