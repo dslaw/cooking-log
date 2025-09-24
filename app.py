@@ -14,10 +14,12 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from src.config import DISHES_FILE, ENTRIES_FILE
+
 
 def load_data() -> pd.DataFrame:
-    df_dishes = pd.read_parquet("dishes_deduped.parquet")
-    df_entries = pd.read_parquet("entries.parquet")
+    df_entries = pd.read_parquet(ENTRIES_FILE)
+    df_dishes = pd.read_parquet(DISHES_FILE)
 
     df_entries = df_entries.rename(
         columns={

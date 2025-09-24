@@ -52,3 +52,8 @@ Run the processing pipeline:
 ```bash
 $ uv run python -m src.pipeline
 ```
+
+Start the `streamlit` app:
+```bash
+$ uv run streamlit run app.py
+```
