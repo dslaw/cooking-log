@@ -13,8 +13,32 @@ import pandas as pd
 import streamlit as st
 import altair as alt
 
-from utils import deduplicate_and_count
-from load_data import load_data
+
+def load_data() -> pd.DataFrame:
+    df_dishes = pd.read_parquet("dishes_deduped.parquet")
+    df_entries = pd.read_parquet("entries.parquet")
+
+    df_entries = df_entries.rename(columns={
+        "date": "entry_date",
+        "id": "entry_id",
+        "meal": "meal_type",
+    })
+    df_entries["entry_date"] = pd.to_datetime(df_entries["entry_date"]).dt.date
+
+    df_merged = df_dishes.merge(df_entries, how="inner", on="entry_id")
+    return df_merged
+
+
+def with_frequencies(df: pd.DataFrame) -> pd.DataFrame:
+    frequencies = df["canonical_dish_id"].value_counts()
+    return (
+        df.merge(frequencies, how="inner", on="canonical_dish_id")
+        .rename(columns={"count": "frequency"})
+    )
+
+
+def deduplicate(df: pd.DataFrame) -> pd.DataFrame:
+    return df[df["dish_id"] == df["canonical_dish_id"]]
 
 
 def filter_df(df: pd.DataFrame, start_date, end_date, meal_type: str, raw_text_substr: str) -> pd.DataFrame:
@@ -38,7 +62,7 @@ def main():
 
     st.sidebar.header("Filters")
 
-    df = load_data()
+    df = with_frequencies(load_data())
 
     # Date filter is optional - show toggle
     use_date = st.sidebar.checkbox("Filter by date range")
@@ -70,7 +94,7 @@ def main():
     result_df = st.session_state["filtered_df"]
 
     # Deduplicate and compute frequency
-    dedup = deduplicate_and_count(result_df)
+    dedup = deduplicate(result_df)
 
     # Table view (sorting options removed from UI)
     st.subheader("Dishes (deduplicated)")
@@ -90,12 +114,8 @@ def main():
         "dish_id": True,
     }
 
-    # Two-column layout: left for controls, right for table/chart
-    left_col, right_col = st.columns([1, 6])
-
     # Checkbox to toggle showing duplicate rows. Default: not showing duplicates.
-    with left_col:
-        show_duplicates = st.checkbox("Show duplicate rows", value=False)
+    show_duplicates = st.checkbox("Show duplicate rows", value=False)
 
     # Prepare display DataFrame depending on checkbox
     if show_duplicates:
@@ -115,8 +135,7 @@ def main():
     asc_list = [default_directions.get(col, True) for col in cols]
     display_df = display_df.sort_values(by=cols, ascending=asc_list)
 
-    with right_col:
-        st.dataframe(display_df, column_order=cols, hide_index=True, width="stretch")
+    st.dataframe(display_df, column_order=cols, hide_index=True, width="stretch")
 
     # Frequency plot
     st.subheader("Frequency plot")
