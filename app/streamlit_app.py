@@ -137,6 +137,55 @@ def main():
 
     st.dataframe(display_df, column_order=cols, hide_index=True, width="stretch")
 
+    # Entry date vs Frequency scatter plot (aggregated, deduplicated by entry_date)
+    st.subheader("Entry date vs Frequency")
+    # Use the currently-selected filters so the plot updates when filters change
+    filtered_now = filter_df(df, start_date, end_date, meal_type,
+                             raw_text_substr)
+
+    # Always use deduplicated records for this plot
+    dedup_now = deduplicate(filtered_now).copy() if not filtered_now.empty else pd.DataFrame()
+
+    if not dedup_now.empty and "entry_date" in dedup_now.columns and "frequency" in dedup_now.columns:
+        # Ensure datetime for Altair
+        dedup_now["entry_date"] = pd.to_datetime(dedup_now["entry_date"])
+
+        # Aggregate by date: sum frequency, and collect up to 3 sample raw_text values
+        def sample_texts(x):
+            vals = pd.unique(x.dropna().astype(str))
+            return "; ".join(vals[:3]) if len(vals) > 0 else ""
+
+        if "raw_text" in dedup_now.columns:
+            agg = (
+                dedup_now.groupby("entry_date").agg({"frequency": "sum", "raw_text": sample_texts}).reset_index()
+                .rename(columns={"raw_text": "raw_samples"})
+            )
+        else:
+            agg = dedup_now.groupby("entry_date").agg({"frequency": "sum"}).reset_index()
+            agg["raw_samples"] = ""
+
+        # Build tooltip: include raw_samples
+        tooltip = [
+            alt.Tooltip("raw_samples:N", title="Sample raw_texts"),
+            alt.Tooltip("frequency:Q", title="Frequency"),
+            alt.Tooltip("entry_date:T", title="Entry date", format="%Y-%m-%d"),
+        ]
+
+        scatter = (
+            alt.Chart(agg)
+            .mark_circle(size=80, opacity=0.8)
+            .encode(
+                x=alt.X("entry_date:T", title="Entry date"),
+                y=alt.Y("frequency:Q", title="Frequency"),
+                tooltip=tooltip,
+            )
+            .properties(height=320)
+        )
+
+        st.altair_chart(scatter, use_container_width=True)
+    else:
+        st.write("No data available to plot entry date vs frequency.")
+
     # Frequency plot
     st.subheader("Frequency plot")
     if not dedup.empty:
