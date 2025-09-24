@@ -119,17 +119,19 @@ def parse_body(body: list[str]) -> tuple[list[str], list[str]]:
     return dishes, notes
 
 
-def parse_cooking_log(lines: list[str]) -> list[CookingLogEntry]:
-    entries: list[CookingLogEntry] = []
-    for date, meal, raw_body in split_entries(lines):
-        dishes, notes = parse_body(raw_body)
-        entries.append(
-            CookingLogEntry(
-                date=date,
-                meal=meal,
-                dishes=dishes,
-                notes=notes,
+class CookingLogParser:
+    @staticmethod
+    def parse(lines: list[str]) -> list[CookingLogEntry]:
+        entries: list[CookingLogEntry] = []
+        for date, meal, raw_body in split_entries(lines):
+            dishes, notes = parse_body(raw_body)
+            entries.append(
+                CookingLogEntry(
+                    date=date,
+                    meal=meal,
+                    dishes=dishes,
+                    notes=notes,
+                )
             )
-        )
 
-    return entries
+        return entries

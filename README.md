@@ -48,10 +48,7 @@ $ mkdir -p data
 $ cp path/to/cooking-log.md data/
 ```
 
-Finally, run the Python scripts:
+Run the processing pipeline:
 ```bash
-# Remove any data artifacts that are present.
-$ rm data/*.parquet
-$ uv run python -m src.process_entries
-$ uv run python -m src.dedupe
+$ uv run python -m src.pipeline
 ```
