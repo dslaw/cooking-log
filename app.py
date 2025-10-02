@@ -94,7 +94,7 @@ def main():
     if st.sidebar.button("Search"):
         # Save filtered in session state so display updates only when Search pressed
         filtered = filter_df(df, start_date, end_date, meal_type, raw_text_substr)
-        st.session_state["filtered_df"] = filtered
+        st.session_state["filtered_df"] = with_frequencies(filtered)
     # Initialize session state on first run
     if "filtered_df" not in st.session_state:
         st.session_state["filtered_df"] = df
