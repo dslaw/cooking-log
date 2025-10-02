@@ -50,7 +50,7 @@ Once set up, run the processing pipeline:
 $ uv run python -m src.pipeline
 ```
 
-Start the `streamlit` app:
+Start the `streamlit` dashboard:
 ```bash
-$ uv run streamlit run app.py
+$ uv run streamlit run dashboard.py
 ```
