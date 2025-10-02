@@ -39,12 +39,7 @@ def make_dishes(
     for _, entry in df_entries.iterrows():
         entry_id = entry["id"]
         for dish in entry["dishes"]:
-            result = text_processor.process(dish)
-            if result is None:
-                continue
-
-            cleaned, tokens, language, language_confidence = result
-
+            ingredients, language, language_confidence = text_processor.process(dish)
             dish_records.append(
                 {
                     "dish_id": dish_id,
@@ -52,8 +47,7 @@ def make_dishes(
                     "raw_text": dish,
                     "language": language,
                     "language_confidence": language_confidence,
-                    "cleaned_text": cleaned,
-                    "tokens": tokens,
+                    "ingredients": ingredients,
                 }
             )
             dish_id += 1
@@ -86,13 +80,13 @@ def main():
     df_entries.drop(columns=["dishes"], inplace=True)
     print(f"Read {len(df_dishes):,} dishes")
 
-    canonical_dish_ids = deduplicate(df_dishes["tokens"], df_dishes["dish_id"])
+    canonical_dish_ids = deduplicate(df_dishes["ingredients"], df_dishes["dish_id"])
     df_dishes["canonical_dish_id"] = canonical_dish_ids
     n_unique_dishes = len(canonical_dish_ids.unique())
     print(f"{n_unique_dishes:,} / {len(df_dishes):,} unique dishes")
 
     df_entries.to_parquet(ENTRIES_FILE, index=False)
-    print(f'"Wrote entries to "{ENTRIES_FILE}"')
+    print(f'Wrote entries to "{ENTRIES_FILE}"')
     df_dishes.to_parquet(DISHES_FILE, index=False)
     print(f'Wrote dishes to "{DISHES_FILE}"')
     return

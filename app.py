@@ -2,8 +2,8 @@
 Streamlit single-page app to browse cooked dishes.
 
 Placeholder data is used below; replace the placeholder `df` with your own DataFrame
-that contains the columns: dish_id, raw_text, cleaned_text, canonical_dish_id,
-entry_date (datetime.date), meal_type (str).
+that contains the columns: dish_id, raw_text, canonical_dish_id, entry_date
+(datetime.date), meal_type (str).
 
 Run with:
     streamlit run streamlit_app.py
@@ -116,21 +116,20 @@ def main():
         "meal_type",
         "raw_text",
         "frequency",
+        "ingredients",
         "dish_id",
         "canonical_dish_id",
-        "cleaned_text",
     ]
 
     # Default directions (assumptions): entry_date most-recent first (desc), frequency desc, others asc
-    default_directions = {
-        "entry_date": False,
-        "meal_type": True,
-        "raw_text": True,
-        "frequency": False,
-        "cleaned_text": True,
-        "canonical_dish_id": True,
-        "dish_id": True,
-    }
+    default_directions = [
+        ("entry_date", False),
+        ("meal_type", True),
+        ("raw_text", True),
+        ("frequency", False),
+        ("canonical_dish_id", True),
+        ("dish_id", True),
+    ]
 
     # Checkbox to toggle showing duplicate rows. Default: not showing duplicates.
     show_duplicates = st.checkbox("Show duplicate rows", value=False)
@@ -142,12 +141,11 @@ def main():
         # Deduplicate
         display_df = deduplicate(result_df)
 
-    # Compute frequencies
-    display_df = with_frequencies(display_df)
-
     # Apply default sorting only (no interactive sort controls)
-    asc_list = [default_directions.get(col, True) for col in cols]
-    display_df = display_df.sort_values(by=cols, ascending=asc_list)
+    sort_by, sort_ascending = zip(*default_directions)
+    display_df = display_df.sort_values(
+        by=list(sort_by), ascending=list(sort_ascending), axis=0
+    )
 
     st.dataframe(display_df, column_order=cols, hide_index=True, width="stretch")
 
@@ -214,11 +212,7 @@ def main():
     dedup = deduplicate(result_df)
     if not dedup.empty:
         chart_df = dedup.copy()
-        chart_df["label"] = (
-            chart_df["cleaned_text"].fillna(chart_df["raw_text"])
-            if "cleaned_text" in chart_df.columns
-            else chart_df["raw_text"]
-        )
+        chart_df["label"] = chart_df["raw_text"]
         chart = (
             alt.Chart(chart_df)
             .mark_bar()
