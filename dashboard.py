@@ -1,15 +1,3 @@
-"""
-Streamlit single-page app to browse cooked dishes.
-
-Placeholder data is used below; replace the placeholder `df` with your own DataFrame
-that contains the columns: dish_id, raw_text, canonical_dish_id, entry_date
-(datetime.date), meal_type (str).
-
-Run with:
-    streamlit run streamlit_app.py
-
-"""
-
 import altair as alt
 import pandas as pd
 import streamlit as st
