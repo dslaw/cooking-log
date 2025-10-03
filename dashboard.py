@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -5,9 +7,9 @@ import streamlit as st
 from src.config import DISHES_FILE, ENTRIES_FILE
 
 
-def load_data() -> pd.DataFrame:
-    df_entries = pd.read_parquet(ENTRIES_FILE)
-    df_dishes = pd.read_parquet(DISHES_FILE)
+def load_data(entries_file: Path, dishes_file: Path) -> pd.DataFrame:
+    df_entries = pd.read_parquet(entries_file)
+    df_dishes = pd.read_parquet(dishes_file)
 
     df_entries = df_entries.rename(
         columns={
@@ -16,13 +18,13 @@ def load_data() -> pd.DataFrame:
             "meal": "meal_type",
         }
     )
-    df_entries["entry_date"] = pd.to_datetime(df_entries["entry_date"]).dt.date
+    df_entries["entry_date"] = df_entries["entry_date"].dt.date
 
     df_merged = df_dishes.merge(df_entries, how="inner", on="entry_id")
     return df_merged
 
 
-def with_frequencies(df: pd.DataFrame) -> pd.DataFrame:
+def add_frequencies(df: pd.DataFrame) -> pd.DataFrame:
     frequencies = df["canonical_dish_id"].value_counts()
     if "frequency" in df.columns:
         df = df.drop(columns=["frequency"])
@@ -59,7 +61,7 @@ def main():
 
     st.sidebar.header("Filters")
 
-    df = with_frequencies(load_data())
+    df = add_frequencies(load_data(ENTRIES_FILE, DISHES_FILE))
 
     # Date filter is optional - show toggle
     use_date = st.sidebar.checkbox("Filter by date range")
@@ -82,7 +84,8 @@ def main():
     if st.sidebar.button("Search"):
         # Save filtered in session state so display updates only when Search pressed
         filtered = filter_df(df, start_date, end_date, meal_type, raw_text_substr)
-        st.session_state["filtered_df"] = with_frequencies(filtered)
+        st.session_state["filtered_df"] = add_frequencies(filtered)
+
     # Initialize session state on first run
     if "filtered_df" not in st.session_state:
         st.session_state["filtered_df"] = df
@@ -122,12 +125,12 @@ def main():
     # Checkbox to toggle showing duplicate rows. Default: not showing duplicates.
     show_duplicates = st.checkbox("Show duplicate rows", value=False)
 
+    # Deduplicate. Frequencies are based on canonical dishes, so do not need to
+    # be recomputed.
+    deduped = deduplicate(result_df)
+
     # Prepare display DataFrame depending on checkbox
-    if show_duplicates:
-        display_df = result_df
-    else:
-        # Deduplicate
-        display_df = deduplicate(result_df)
+    display_df = result_df if show_duplicates else deduped
 
     # Apply default sorting only (no interactive sort controls)
     sort_by, sort_ascending = zip(*default_directions)
@@ -141,36 +144,25 @@ def main():
     st.subheader("Entry date vs Frequency")
 
     # Always use deduplicated records for this plot
-    dedup_now = (
-        with_frequencies(deduplicate(result_df))
-        if not result_df.empty
-        else pd.DataFrame()
-    )
-
     if (
-        not dedup_now.empty
-        and "entry_date" in dedup_now.columns
-        and "frequency" in dedup_now.columns
+        not deduped.empty
+        and "entry_date" in deduped.columns
+        and "frequency" in deduped.columns
     ):
-        # Ensure datetime for Altair
-        dedup_now["entry_date"] = pd.to_datetime(dedup_now["entry_date"])
-
         # Aggregate by date: sum frequency, and collect up to 3 sample raw_text values
         def sample_texts(x):
             vals = pd.unique(x.dropna().astype(str))
             return "; ".join(vals[:3]) if len(vals) > 0 else ""
 
-        if "raw_text" in dedup_now.columns:
+        if "raw_text" in deduped.columns:
             agg = (
-                dedup_now.groupby("entry_date")
+                deduped.groupby("entry_date")
                 .agg({"frequency": "sum", "raw_text": sample_texts})
                 .reset_index()
                 .rename(columns={"raw_text": "raw_samples"})
             )
         else:
-            agg = (
-                dedup_now.groupby("entry_date").agg({"frequency": "sum"}).reset_index()
-            )
+            agg = deduped.groupby("entry_date").agg({"frequency": "sum"}).reset_index()
             agg["raw_samples"] = ""
 
         # Build tooltip: include raw_samples
