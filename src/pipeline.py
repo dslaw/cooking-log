@@ -1,10 +1,20 @@
+import hashlib
 from collections import Counter
+from datetime import date
 
 import pandas as pd
 
 from src.config import COOKING_LOG_FILE, DISHES_FILE, ENTRIES_FILE
 from src.parser import CookingLogEntry, CookingLogParser, read_cooking_log
 from src.text_processor import TextProcessor, make_text_processor
+
+
+def make_id(entry_date: date, meal: str, text: str) -> str:
+    """Make a stable id for a record."""
+
+    encoded = (entry_date.isoformat() + meal.lower() + text).encode()
+    hash_ = hashlib.md5(encoded, usedforsecurity=False)
+    return hash_.hexdigest()
 
 
 def hash_tokens(tokens: list[str]) -> str:
@@ -33,16 +43,18 @@ def make_entries_dataframe(entries: list[CookingLogEntry]) -> pd.DataFrame:
 def make_dishes(
     df_entries: pd.DataFrame, text_processor: TextProcessor
 ) -> pd.DataFrame:
-    dish_id = 1
     dish_records = []
     text_processor = make_text_processor()
     for _, entry in df_entries.iterrows():
         entry_id = entry["id"]
+        entry_date = entry["date"].date()
+        entry_meal = entry["meal"]
+
         for dish in entry["dishes"]:
             ingredients, language, language_confidence = text_processor.process(dish)
             dish_records.append(
                 {
-                    "dish_id": dish_id,
+                    "dish_id": make_id(entry_date, entry_meal, dish),
                     "entry_id": entry_id,
                     "raw_text": dish,
                     "language": language,
@@ -50,13 +62,12 @@ def make_dishes(
                     "ingredients": ingredients,
                 }
             )
-            dish_id += 1
 
     return pd.DataFrame.from_records(dish_records)
 
 
 def deduplicate(
-    ingredients_dishes: list[list[str] | None], dish_ids: list[int]
+    ingredients_dishes: list[list[str] | None], dish_ids: list[str]
 ) -> dict[int, int]:
     grouped: dict[str, list[int]] = {}
     for dish_id, ingredients in zip(dish_ids, ingredients_dishes):
